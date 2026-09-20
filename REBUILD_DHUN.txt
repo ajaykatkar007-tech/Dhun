@@ -1,0 +1,10 @@
+Dhun repaired source snapshot.
+
+Build on a machine with Android Studio/Gradle + Android SDK:
+
+./gradlew clean assembleDebug
+
+Expected APK:
+app/build/outputs/apk/debug/app-debug.apk
+
+Install that exact APK on the Android test device before functional testing.
