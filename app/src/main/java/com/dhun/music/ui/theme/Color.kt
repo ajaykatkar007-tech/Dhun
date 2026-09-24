@@ -1,0 +1,12 @@
+package com.dhun.music.ui.theme
+import androidx.compose.ui.graphics.Color
+val DhunBackground=Color(0xFF0A0A0E)
+val DhunSurface=Color(0xFF161622)
+val DhunCard=Color(0xFF161622)
+val DhunCardElevated=Color(0xFF20202F)
+val DhunBorder=Color(0xFF28283A)
+val DhunViolet=Color(0xFF8B5CF6)
+val DhunVioletDark=Color(0xFF5B21B6)
+val DhunPink=Color(0xFFEC4899)
+val DhunTextPrimary=Color.White
+val DhunTextSecondary=Color(0xFFB5B5C5)
