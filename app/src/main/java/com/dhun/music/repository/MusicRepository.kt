@@ -73,9 +73,15 @@ class MusicRepository(private val context: Context, private val dao: DhunDao) {
         dao.insertSongs(entities)
     }
 
-    suspend fun toggleFavorite(songId: Long) = withContext(Dispatchers.IO) {
-        if (dao.isFavorite(songId).first()) dao.deleteFavorite(songId)
-        else dao.insertFavorite(FavoriteEntity(songId = songId))
+    /** Returns the new favorite state so the active player UI can update immediately. */
+    suspend fun toggleFavorite(songId: Long): Boolean = withContext(Dispatchers.IO) {
+        if (dao.isFavorite(songId).first()) {
+            dao.deleteFavorite(songId)
+            false
+        } else {
+            dao.insertFavorite(FavoriteEntity(songId = songId))
+            true
+        }
     }
 
     suspend fun createPlaylist(name: String): Long = withContext(Dispatchers.IO) {
