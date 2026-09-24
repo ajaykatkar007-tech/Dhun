@@ -67,6 +67,16 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
         onSongChangeListener = listener
     }
 
+    /** Favorite metadata update only; never changes playback transport state. */
+    fun updateCurrentSongFavorite(songId: Long, isFavorite: Boolean) {
+        _playbackInfo.update { info ->
+            val current = info.currentSong
+            val updatedCurrent = if (current?.id == songId) current.copy(isFavorite = isFavorite) else current
+            val updatedQueue = info.queue.map { if (it.id == songId) it.copy(isFavorite = isFavorite) else it }
+            info.copy(currentSong = updatedCurrent, queue = updatedQueue)
+        }
+    }
+
     fun playSong(song: Song, queue: List<Song>? = null) {
         userPaused = false
         resumeOnFocusGain = false
