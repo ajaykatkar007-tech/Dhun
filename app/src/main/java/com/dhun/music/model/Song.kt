@@ -10,8 +10,7 @@ data class Song(
     val albumArtUri: String? = null,
     val folder: String = "",
     val dateAdded: Long = 0L,
-    val isFavorite: Boolean = false,
-    val isLocalSample: Boolean = false
+    val isFavorite: Boolean = false
 ) {
     fun formatDuration(): String {
         val totalSeconds = (durationMs / 1000).coerceAtLeast(0)

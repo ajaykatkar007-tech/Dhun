@@ -30,7 +30,7 @@ class MusicRepository(private val context: Context, private val dao: DhunDao) {
         entities.map { entity ->
             Song(entity.id, entity.title, entity.artist, entity.album, entity.durationMs,
                 entity.contentUri, entity.albumArtUri, entity.folder, entity.dateAdded,
-                favoriteIds.contains(entity.id), entity.isLocalSample)
+                favoriteIds.contains(entity.id))
         }
     }
 
@@ -42,7 +42,7 @@ class MusicRepository(private val context: Context, private val dao: DhunDao) {
     }
 
     val playlists: Flow<List<Playlist>> = dao.getAllPlaylists().map { entities ->
-        entities.map { Playlist(it.id, it.name, it.createdAt) }
+        entities.map { Playlist(it.id, it.name, createdAt = it.createdAt) }
     }
 
     val albums: Flow<List<Album>> = allSongs.map { songs ->
@@ -65,12 +65,12 @@ class MusicRepository(private val context: Context, private val dao: DhunDao) {
 
     suspend fun rescanMusic(ignoreShortAudio: Boolean = true) = withContext(Dispatchers.IO) {
         val minDuration = if (ignoreShortAudio) 30_000L else 5_000L
-        val entities = MediaScanner.scanDeviceAudio(context, minDuration).map { song ->
+        val songs = MediaScanner.scanDeviceAudio(context, minDuration) ?: return@withContext
+        val entities = songs.map { song ->
             SongEntity(song.id, song.title, song.artist, song.album, song.durationMs,
-                song.contentUri, song.albumArtUri, song.folder, song.dateAdded, song.isLocalSample)
+            song.contentUri, song.albumArtUri, song.folder, song.dateAdded)
         }
-        dao.clearScannedSongs()
-        dao.insertSongs(entities)
+        dao.replaceSongs(entities)
     }
 
     /** Returns the new favorite state so the active player UI can update immediately. */

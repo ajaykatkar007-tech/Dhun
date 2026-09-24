@@ -5,9 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.media.MediaMetadata
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -17,11 +14,16 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
+import androidx.media.app.NotificationCompat.MediaStyle
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import com.dhun.music.MainActivity
+import com.dhun.music.R
 import com.dhun.music.model.Song
 
 class DhunPlaybackService : Service() {
-    private lateinit var mediaSession: MediaSession
+    private lateinit var mediaSession: MediaSessionCompat
 
     private val noisyReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -36,12 +38,13 @@ class DhunPlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        mediaSession = MediaSession(this, "Dhun").apply {
-            setCallback(object : MediaSession.Callback() {
+        mediaSession = MediaSessionCompat(this, "Dhun").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() = AudioPlaybackManager.getInstance(applicationContext).resume()
                 override fun onPause() = AudioPlaybackManager.getInstance(applicationContext).pause()
                 override fun onSkipToNext() = AudioPlaybackManager.getInstance(applicationContext).next()
                 override fun onSkipToPrevious() = AudioPlaybackManager.getInstance(applicationContext).previous()
+                override fun onSeekTo(pos: Long) = AudioPlaybackManager.getInstance(applicationContext).seekTo(pos)
                 override fun onStop() = AudioPlaybackManager.getInstance(applicationContext).pause()
             })
             isActive = true
@@ -73,7 +76,6 @@ class DhunPlaybackService : Service() {
             ACTION_NEXT -> playbackManager.next()
             ACTION_PREV -> playbackManager.previous()
             ACTION_STOP -> {
-                playbackManager.pause()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
@@ -93,7 +95,7 @@ class DhunPlaybackService : Service() {
                 }
             }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun buildNotification(title: String, artist: String, isPlaying: Boolean): Notification {
@@ -128,13 +130,14 @@ class DhunPlaybackService : Service() {
             .setContentTitle(title)
             .setContentText(artist)
             .setSubText("Dhun")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_dhun)
             .setContentIntent(contentPendingIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevPendingIntent)
             .addAction(playPauseIcon, if (isPlaying) "Pause" else "Play", playPausePendingIntent)
             .addAction(android.R.drawable.ic_media_next, "Next", nextPendingIntent)
+            .setStyle(MediaStyle().setMediaSession(mediaSession.sessionToken).setShowActionsInCompactView(0, 1, 2))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -156,19 +159,19 @@ class DhunPlaybackService : Service() {
         val manager = AudioPlaybackManager.getInstance(applicationContext)
         val info = manager.playbackInfo.value
         mediaSession.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, info.currentSong?.album ?: "Dhun")
-                .putLong(MediaMetadata.METADATA_KEY_DURATION, info.durationMs)
+            MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, info.currentSong?.album ?: "Dhun")
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, info.durationMs)
                 .build()
         )
-        val actions = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
-            PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-            PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_STOP
+        val actions = PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
+            PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+            PlaybackStateCompat.ACTION_SEEK_TO or PlaybackStateCompat.ACTION_STOP
         mediaSession.setPlaybackState(
-            PlaybackState.Builder().setActions(actions).setState(
-                if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+            PlaybackStateCompat.Builder().setActions(actions).setState(
+                if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
                 info.currentPositionMs, 1f
             ).build()
         )

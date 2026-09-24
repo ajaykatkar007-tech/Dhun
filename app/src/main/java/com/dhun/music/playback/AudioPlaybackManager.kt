@@ -26,6 +26,8 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
 
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var mediaPlayer: MediaPlayer? = null
+    private var isPrepared = false
+    private var playWhenReady = false
     private var audioFocusRequest: AudioFocusRequest? = null
     private var progressJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + Job())
@@ -38,6 +40,17 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
 
     private var userPaused = false
     private var resumeOnFocusGain = false
+
+    private val reusableAudioFocusRequest: AudioFocusRequest? by lazy {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return@lazy null
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .build())
+            .setOnAudioFocusChangeListener(focusChangeListener)
+            .build()
+    }
 
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
@@ -80,7 +93,7 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
     fun playSong(song: Song, queue: List<Song>? = null) {
         userPaused = false
         resumeOnFocusGain = false
-        val targetQueue = queue ?: if (_playbackInfo.value.queue.isEmpty()) listOf(song) else _playbackInfo.value.queue
+        val targetQueue = queue ?: listOf(song)
         originalQueue = targetQueue
         val activeQueue = if (_playbackInfo.value.isShuffle) {
             val shuffled = targetQueue.toMutableList()
@@ -94,9 +107,18 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
             it.copy(currentSong = song, queue = activeQueue, queueIndex = index,
                 status = PlayerStatus.BUFFERING, currentPositionMs = 0L, durationMs = song.durationMs)
         }
+        playWhenReady = true
         startPlayback(song)
         onSongChangeListener?.invoke(song)
         updateServiceNotification()
+    }
+
+    fun playQueueItem(index: Int) {
+        if (index !in _playbackInfo.value.queue.indices) return
+        userPaused = false
+        resumeOnFocusGain = false
+        playWhenReady = true
+        startQueuedSong(index)
     }
 
     private fun startPlayback(song: Song) {
@@ -115,14 +137,16 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
                     .build())
                 setDataSource(appContext, Uri.parse(song.contentUri))
                 setOnPreparedListener { mp ->
-                    mp.start()
+                    isPrepared = true
+                    if (playWhenReady) mp.start()
                     val actualDuration = mp.duration.toLong().takeIf { it > 0 } ?: song.durationMs
-                    _playbackInfo.update { it.copy(status = PlayerStatus.PLAYING, durationMs = actualDuration, errorMessage = null) }
-                    startProgressTracker()
+                    _playbackInfo.update { it.copy(status = if (playWhenReady) PlayerStatus.PLAYING else PlayerStatus.PAUSED, durationMs = actualDuration, errorMessage = null) }
+                    if (playWhenReady) startProgressTracker()
                     updateServiceNotification()
                 }
                 setOnCompletionListener { handleTrackCompletion() }
                 setOnErrorListener { _, what, extra ->
+                    releasePlayer()
                     _playbackInfo.update { it.copy(status = PlayerStatus.ERROR, errorMessage = "Playback error: $what, $extra") }
                     true
                 }
@@ -143,6 +167,7 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
             userPaused = true
             resumeOnFocusGain = false
         }
+        playWhenReady = false
         mediaPlayer?.let { if (it.isPlaying) it.pause() }
         stopProgressTracker()
         _playbackInfo.update { it.copy(status = PlayerStatus.PAUSED) }
@@ -152,10 +177,16 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
     private fun resumeFromFocusGain() {
         val currentSong = _playbackInfo.value.currentSong ?: return
         val player = mediaPlayer ?: run {
+            playWhenReady = true
             startPlayback(currentSong)
             return
         }
+        if (!isPrepared) {
+            playWhenReady = true
+            return
+        }
         try {
+            playWhenReady = true
             player.start()
             _playbackInfo.update { it.copy(status = PlayerStatus.PLAYING) }
             startProgressTracker()
@@ -172,10 +203,14 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
             return
         }
         if (mediaPlayer == null) {
+            playWhenReady = true
             startPlayback(currentSong)
             return
         }
-        if (requestAudioFocus()) {
+        if (!isPrepared) {
+            playWhenReady = true
+        } else if (requestAudioFocus()) {
+            playWhenReady = true
             mediaPlayer?.start()
             _playbackInfo.update { it.copy(status = PlayerStatus.PLAYING) }
             startProgressTracker()
@@ -191,7 +226,7 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
         if (nextIndex != -1) {
             val nextSong = current.queue[nextIndex]
             _playbackInfo.update { it.copy(queueIndex = nextIndex) }
-            playSong(nextSong, current.queue)
+            playQueueItem(nextIndex)
         } else {
             pause()
             seekTo(0)
@@ -209,11 +244,12 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
         else if (current.repeatMode == RepeatMode.ALL) current.queue.size - 1 else 0
         val prevSong = current.queue[prevIndex]
         _playbackInfo.update { it.copy(queueIndex = prevIndex) }
-        playSong(prevSong, current.queue)
+        playQueueItem(prevIndex)
     }
 
     fun seekTo(positionMs: Long) {
         mediaPlayer?.let { player ->
+            if (!isPrepared) return
             val safePos = positionMs.coerceIn(0L, player.duration.toLong().coerceAtLeast(1L))
             player.seekTo(safePos.toInt())
             _playbackInfo.update { it.copy(currentPositionMs = safePos) }
@@ -264,6 +300,7 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
         val current = _playbackInfo.value
         if (index !in current.queue.indices) return
         val currentQueue = current.queue.toMutableList().apply { removeAt(index) }
+        val wasCurrent = index == current.queueIndex
         val newIndex = when {
             index < current.queueIndex -> current.queueIndex - 1
             index == current.queueIndex -> if (currentQueue.isEmpty()) { pause(); -1 } else current.queueIndex.coerceAtMost(currentQueue.size - 1)
@@ -273,11 +310,22 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
             it.copy(queue = currentQueue, queueIndex = newIndex,
                 currentSong = if (newIndex >= 0) currentQueue[newIndex] else null)
         }
+        if (wasCurrent && newIndex >= 0) {
+            playWhenReady = true
+            startQueuedSong(newIndex)
+        }
     }
 
     fun clearQueue() {
         pause()
         releasePlayer()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(focusChangeListener)
+        }
+        audioFocusRequest = null
         _playbackInfo.update { it.copy(currentSong = null, queue = emptyList(), queueIndex = -1,
             status = PlayerStatus.IDLE, currentPositionMs = 0L, durationMs = 0L) }
         DhunPlaybackService.stopService(appContext)
@@ -299,6 +347,16 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
         }
     }
 
+    private fun startQueuedSong(index: Int) {
+        val queue = _playbackInfo.value.queue
+        val song = queue.getOrNull(index) ?: return
+        _playbackInfo.update { it.copy(currentSong = song, queueIndex = index,
+            status = PlayerStatus.BUFFERING, currentPositionMs = 0L, durationMs = song.durationMs) }
+        startPlayback(song)
+        onSongChangeListener?.invoke(song)
+        updateServiceNotification()
+    }
+
     private fun startProgressTracker() {
         stopProgressTracker()
         progressJob = scope.launch {
@@ -318,13 +376,7 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
 
     private fun requestAudioFocus(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build())
-                .setOnAudioFocusChangeListener(focusChangeListener)
-                .build()
+            val request = reusableAudioFocusRequest ?: return false
             audioFocusRequest = request
             audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         } else {
@@ -334,6 +386,7 @@ class AudioPlaybackManager private constructor(private val appContext: Context) 
     }
 
     private fun releasePlayer() {
+        isPrepared = false
         mediaPlayer?.let {
             try { it.stop() } catch (_: Exception) { }
             it.release()

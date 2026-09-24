@@ -48,6 +48,7 @@ class DhunViewModel : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun playSong(song: Song, queue: List<Song>? = null) = playbackManager.playSong(song, queue)
+    fun playQueueItem(index: Int) = playbackManager.playQueueItem(index)
     fun playOrPause() = playbackManager.playOrPause()
     fun next() = playbackManager.next()
     fun previous() = playbackManager.previous()

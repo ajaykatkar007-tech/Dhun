@@ -5,7 +5,9 @@ import kotlinx.coroutines.flow.Flow
  @Query("SELECT * FROM cached_songs ORDER BY title COLLATE NOCASE ASC") fun getAllSongs():Flow<List<SongEntity>>
  @Query("SELECT * FROM cached_songs WHERE id=:songId LIMIT 1") suspend fun getSongById(songId:Long):SongEntity?
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun insertSongs(songs:List<SongEntity>)
- @Query("DELETE FROM cached_songs WHERE isLocalSample=0") suspend fun clearScannedSongs()
+ @Query("DELETE FROM cached_songs") suspend fun clearScannedSongs()
+ @Transaction
+ suspend fun replaceSongs(songs:List<SongEntity>) { clearScannedSongs(); insertSongs(songs) }
  @Query("SELECT * FROM favorites ORDER BY addedAt DESC") fun getAllFavorites():Flow<List<FavoriteEntity>>
  @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE songId=:songId)") fun isFavorite(songId:Long):Flow<Boolean>
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun insertFavorite(favorite:FavoriteEntity)
