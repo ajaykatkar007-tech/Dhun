@@ -60,7 +60,10 @@ class DhunViewModel : ViewModel() {
     fun clearQueue() = playbackManager.clearQueue()
 
     fun toggleFavorite(song: Song) {
-        viewModelScope.launch { repository.toggleFavorite(song.id) }
+        viewModelScope.launch {
+            val newFavoriteState = repository.toggleFavorite(song.id)
+            playbackManager.updateCurrentSongFavorite(song.id, newFavoriteState)
+        }
     }
 
     fun createPlaylist(name: String) { viewModelScope.launch { repository.createPlaylist(name) } }
