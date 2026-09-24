@@ -18,7 +18,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import com.dhun.music.MainActivity
-import com.dhun.music.R
 import com.dhun.music.model.Song
 
 class DhunPlaybackService : Service() {
@@ -128,8 +127,8 @@ class DhunPlaybackService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSubText(getString(R.string.app_name))
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSubText("Dhun")
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(contentPendingIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
