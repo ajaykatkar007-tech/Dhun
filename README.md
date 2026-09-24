@@ -17,3 +17,7 @@ Premium Indian-modern local music player for Android.
 Source repair snapshot is uploaded, but build/device verification is still required. See `DHUN_REPAIR_STATUS.md`.
 
 Do not treat an old APK as evidence for this source.
+
+## CI verification
+
+GitHub Actions builds the debug APK and runs unit tests on every push to `main`.
