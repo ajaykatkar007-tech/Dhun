@@ -13,7 +13,8 @@ import java.io.File
 object MediaScanner {
     private val ALBUM_ART_URI = Uri.parse("content://media/external/audio/albumart")
 
-    suspend fun scanDeviceAudio(context: Context, minDurationMs: Long = 30_000L): List<Song> =
+    /** Returns null when the scan itself failed (permission revoked, provider error), so callers keep the old library. */
+    suspend fun scanDeviceAudio(context: Context, minDurationMs: Long = 30_000L): List<Song>? =
         withContext(Dispatchers.IO) {
             val songs = mutableListOf<Song>()
             val contentResolver = context.contentResolver
@@ -32,7 +33,8 @@ object MediaScanner {
             val sortOrder = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
 
             try {
-                contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+                val cursor = contentResolver.query(collection, projection, selection, selectionArgs, sortOrder) ?: return@withContext null
+                cursor.use {
                     val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                     val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                     val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -50,17 +52,20 @@ object MediaScanner {
                         val duration = cursor.getLong(durationColumn)
                         val albumId = cursor.getLong(albumIdColumn)
                         val dateAdded = cursor.getLong(dateAddedColumn)
-                        val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
+                        val contentUri = ContentUris.withAppendedId(collection, id).toString()
                         val albumArtUri = ContentUris.withAppendedId(ALBUM_ART_URI, albumId).toString()
                         val filePath = if (dataColumn != -1) cursor.getString(dataColumn) else null
                         val folder = filePath?.let { File(it).parentFile?.name } ?: "Music"
                         songs.add(Song(id, title,
                             if (artist == "<unknown>") "Unknown Artist" else artist,
                             if (album == "<unknown>") "Unknown Album" else album,
-                            duration, contentUri, albumArtUri, folder, dateAdded, false))
+                            duration, contentUri, albumArtUri, folder, dateAdded))
                     }
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return@withContext null
+            }
             songs
         }
 }
